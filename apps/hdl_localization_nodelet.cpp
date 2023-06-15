@@ -397,7 +397,7 @@ private:
     if(tf_buffer.canTransform(robot_odom_frame_id, odom_child_frame_id, ros::Time(0))) {
       geometry_msgs::TransformStamped map_wrt_frame = tf2::eigenToTransform(Eigen::Isometry3d(pose.inverse().cast<double>()));
       map_wrt_frame.header.stamp = stamp;
-      map_wrt_frame.header.frame_id = odom_child_frame_id;
+      map_wrt_frame.header.frame_id = robot_odom_frame_id;
       map_wrt_frame.child_frame_id = "map";
 
       geometry_msgs::TransformStamped frame_wrt_odom = tf_buffer.lookupTransform(robot_odom_frame_id, odom_child_frame_id, ros::Time(0), ros::Duration(0.1));
@@ -421,7 +421,7 @@ private:
       geometry_msgs::TransformStamped odom_trans = tf2::eigenToTransform(Eigen::Isometry3d(pose.cast<double>()));
       odom_trans.header.stamp = stamp;
       odom_trans.header.frame_id = "map";
-      odom_trans.child_frame_id = odom_child_frame_id;
+      odom_trans.child_frame_id = robot_odom_frame_id;
       tf_broadcaster.sendTransform(odom_trans);
     }
 
@@ -431,7 +431,7 @@ private:
     odom.header.frame_id = "map";
 
     tf::poseEigenToMsg(Eigen::Isometry3d(pose.cast<double>()), odom.pose.pose);
-    odom.child_frame_id = odom_child_frame_id;
+    odom.child_frame_id = robot_odom_frame_id;
     odom.twist.twist.linear.x = 0.0;
     odom.twist.twist.linear.y = 0.0;
     odom.twist.twist.angular.z = 0.0;
