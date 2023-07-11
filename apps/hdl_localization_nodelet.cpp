@@ -60,11 +60,13 @@ public:
       NODELET_INFO("enable imu-based prediction");
       imu_sub = mt_nh.subscribe("/gpsimu_driver/imu_data", 256, &HdlLocalizationNodelet::imu_callback, this);
     }
-    points_sub = mt_nh.subscribe("/velodyne_points", 5, &HdlLocalizationNodelet::points_callback, this);
+    points_sub_raw = mt_nh.subscribe("/velodyne_points", 5, &HdlLocalizationNodelet::points_callback_raw, this);
+    points_sub_filtered = mt_nh.subscribe("/velodyne_points_filtered", 5, &HdlLocalizationNodelet::points_callback_filtered, this);
     globalmap_sub = nh.subscribe("/ndt/globalmap", 1, &HdlLocalizationNodelet::globalmap_callback, this);
     initialpose_sub = nh.subscribe("/ndt/initialpose", 8, &HdlLocalizationNodelet::initialpose_callback, this);
 
-    pose_pub = nh.advertise<nav_msgs::Odometry>("/ndt/odom", 5, false);
+    aligned_pose_pub = nh.advertise<nav_msgs::Odometry>("/ndt/odom", 5, false);
+    estimated_pose_pub = nh.advertise<nav_msgs::Odometry>("/ndt/odom/estimates", 5, false);
     aligned_pub = nh.advertise<sensor_msgs::PointCloud2>("/ndt/aligned_points", 5, false);
     status_pub = nh.advertise<ScanMatchingStatus>("/ndt/status", 5, false);
 
@@ -180,13 +182,13 @@ private:
    * @brief callback for point cloud data
    * @param points_msg
    */
-  void points_callback(const sensor_msgs::PointCloud2ConstPtr& points_msg) {
+  void points_callback_raw(const sensor_msgs::PointCloud2ConstPtr& points_msg) {
     if(!globalmap) {
       NODELET_ERROR("globalmap has not been received!!");
       return;
     }
 
-    const auto& stamp = points_msg->header.stamp;
+    stamp_raw = points_msg->header.stamp;
     pcl::PointCloud<PointT>::Ptr pcl_cloud(new pcl::PointCloud<PointT>());
     pcl::fromROSMsg(*points_msg, *pcl_cloud);
 
@@ -198,7 +200,7 @@ private:
     // transform pointcloud into odom_child_frame_id
     std::string tfError;
     pcl::PointCloud<PointT>::Ptr cloud(new pcl::PointCloud<PointT>());
-    if(this->tf_buffer.canTransform(odom_child_frame_id, pcl_cloud->header.frame_id, stamp, ros::Duration(0.1), &tfError))
+    if(this->tf_buffer.canTransform(odom_child_frame_id, pcl_cloud->header.frame_id, stamp_raw, ros::Duration(0.1), &tfError))
     {
         if(!pcl_ros::transformPointCloud(odom_child_frame_id, *pcl_cloud, *cloud, this->tf_buffer)) {
             NODELET_ERROR("point cloud cannot be transformed into target frame!!");
@@ -225,23 +227,7 @@ private:
     Eigen::Matrix4f before = pose_estimator->matrix();
 
     // predict
-    if(!use_imu) {
-      pose_estimator->predict(stamp);
-    } else {
-      std::lock_guard<std::mutex> lock(imu_data_mutex);
-      auto imu_iter = imu_data.begin();
-      for(imu_iter; imu_iter != imu_data.end(); imu_iter++) {
-        if(stamp < (*imu_iter)->header.stamp) {
-          break;
-        }
-        const auto& acc = (*imu_iter)->linear_acceleration;
-        const auto& gyro = (*imu_iter)->angular_velocity;
-        double acc_sign = invert_acc ? -1.0 : 1.0;
-        double gyro_sign = invert_gyro ? -1.0 : 1.0;
-        pose_estimator->predict((*imu_iter)->header.stamp, acc_sign * Eigen::Vector3f(acc.x, acc.y, acc.z), gyro_sign * Eigen::Vector3f(gyro.x, gyro.y, gyro.z));
-      }
-      imu_data.erase(imu_data.begin(), imu_iter);
-    }
+    pose_estimator->predict(stamp_raw);
 
     // odometry-based prediction
     ros::Time last_correction_time = pose_estimator->last_correction_time();
@@ -261,6 +247,47 @@ private:
       }
     }
 
+    publish_odometry(stamp_raw, pose_estimator->matrix(), estimated_pose_pub);
+  }
+
+  void points_callback_filtered(const sensor_msgs::PointCloud2ConstPtr& points_msg) {
+    if(!globalmap) {
+      NODELET_ERROR("globalmap has not been received!!");
+      return;
+    }
+
+    const auto& stamp = points_msg->header.stamp;
+    if (stamp_raw != stamp){
+      NODELET_ERROR("Filtered cloud sync error!!");
+      return;
+    }
+
+    pcl::PointCloud<PointT>::Ptr pcl_cloud(new pcl::PointCloud<PointT>());
+    pcl::fromROSMsg(*points_msg, *pcl_cloud);
+
+    if(pcl_cloud->empty()) {
+      NODELET_ERROR("cloud is empty!!");
+      return;
+    }
+
+    // transform pointcloud into odom_child_frame_id
+    std::string tfError;
+    pcl::PointCloud<PointT>::Ptr cloud(new pcl::PointCloud<PointT>());
+    if(this->tf_buffer.canTransform(odom_child_frame_id, pcl_cloud->header.frame_id, stamp, ros::Duration(0.1), &tfError))
+    {
+        if(!pcl_ros::transformPointCloud(odom_child_frame_id, *pcl_cloud, *cloud, this->tf_buffer)) {
+            NODELET_ERROR("point cloud cannot be transformed into target frame!!");
+            return;
+        }
+    }else
+    {
+        NODELET_ERROR(tfError.c_str());
+        return;
+    }
+
+    auto filtered = downsample(cloud);
+    last_scan = filtered;
+
     // correct
     auto aligned = pose_estimator->correct(stamp, filtered);
 
@@ -274,8 +301,9 @@ private:
       publish_scan_matching_status(points_msg->header, aligned);
     }
 
-    publish_odometry(points_msg->header.stamp, pose_estimator->matrix());
+    publish_odometry(points_msg->header.stamp, pose_estimator->matrix(), aligned_pose_pub);
   }
+
 
   /**
    * @brief callback for globalmap input
@@ -392,7 +420,7 @@ private:
    * @param stamp  timestamp
    * @param pose   odometry pose to be published
    */
-  void publish_odometry(const ros::Time& stamp, const Eigen::Matrix4f& pose) {
+  void publish_odometry(const ros::Time& stamp, const Eigen::Matrix4f& pose, ros::Publisher& pose_pub) { //robot_odom_frame_id: robot_odom_frame_id
     // broadcast the transform over tf
     if(tf_buffer.canTransform(robot_odom_frame_id, odom_child_frame_id, ros::Time(0))) {
       geometry_msgs::TransformStamped map_wrt_frame = tf2::eigenToTransform(Eigen::Isometry3d(pose.inverse().cast<double>()));
@@ -513,11 +541,13 @@ private:
   bool invert_acc;
   bool invert_gyro;
   ros::Subscriber imu_sub;
-  ros::Subscriber points_sub;
+  ros::Subscriber points_sub_raw;
+  ros::Subscriber points_sub_filtered;
   ros::Subscriber globalmap_sub;
   ros::Subscriber initialpose_sub;
 
-  ros::Publisher pose_pub;
+  ros::Publisher aligned_pose_pub;
+  ros::Publisher estimated_pose_pub;
   ros::Publisher aligned_pub;
   ros::Publisher status_pub;
 
@@ -547,6 +577,9 @@ private:
   ros::ServiceServer relocalize_server;
   ros::ServiceClient set_global_map_service;
   ros::ServiceClient query_global_localization_service;
+
+  // time stamp 
+  ros::Time stamp_raw;
 };
 }
 
