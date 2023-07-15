@@ -66,8 +66,9 @@ public:
     initialpose_sub = nh.subscribe("/ndt/initialpose", 8, &HdlLocalizationNodelet::initialpose_callback, this);
 
     aligned_pose_pub = nh.advertise<nav_msgs::Odometry>("/ndt/odom", 5, false);
-    estimated_pose_pub = nh.advertise<nav_msgs::Odometry>("/ndt/odom/estimates", 5, false);
+    predicted_pose_pub = nh.advertise<nav_msgs::Odometry>("/ndt/predicted/odom", 5, false);
     aligned_pub = nh.advertise<sensor_msgs::PointCloud2>("/ndt/aligned_points", 5, false);
+    predicted_cloud_pub = nh.advertise<sensor_msgs::PointCloud2>("/ndt/predicted/aligned_points", 5, false);
     status_pub = nh.advertise<ScanMatchingStatus>("/ndt/status", 5, false);
 
     // global localization
@@ -233,8 +234,8 @@ private:
     ros::Time last_correction_time = pose_estimator->last_correction_time();
     if(private_nh.param<bool>("enable_robot_odometry_prediction", false) && !last_correction_time.isZero()) {
       geometry_msgs::TransformStamped odom_delta;
-      if(tf_buffer.canTransform(odom_child_frame_id, last_correction_time, odom_child_frame_id, stamp, robot_odom_frame_id, ros::Duration(0.1))) {
-        odom_delta = tf_buffer.lookupTransform(odom_child_frame_id, last_correction_time, odom_child_frame_id, stamp, robot_odom_frame_id, ros::Duration(0));
+      if(tf_buffer.canTransform(odom_child_frame_id, last_correction_time, odom_child_frame_id, stamp_raw, robot_odom_frame_id, ros::Duration(0.1))) {
+        odom_delta = tf_buffer.lookupTransform(odom_child_frame_id, last_correction_time, odom_child_frame_id, stamp_raw, robot_odom_frame_id, ros::Duration(0));
       } else if(tf_buffer.canTransform(odom_child_frame_id, last_correction_time, odom_child_frame_id, ros::Time(0), robot_odom_frame_id, ros::Duration(0))) {
         odom_delta = tf_buffer.lookupTransform(odom_child_frame_id, last_correction_time, odom_child_frame_id, ros::Time(0), robot_odom_frame_id, ros::Duration(0));
       }
@@ -247,7 +248,12 @@ private:
       }
     }
 
-    publish_odometry(stamp_raw, pose_estimator->matrix(), estimated_pose_pub);
+    publish_odometry(stamp_raw, pose_estimator->matrix(), predicted_pose_pub);
+
+    // publish predicted clouds 
+    cloud->header.frame_id = "map";
+    predicted_cloud_pub.publish(cloud);
+
   }
 
   void points_callback_filtered(const sensor_msgs::PointCloud2ConstPtr& points_msg) {
@@ -257,9 +263,9 @@ private:
     }
 
     const auto& stamp = points_msg->header.stamp;
-    if (stamp_raw != stamp){
-      NODELET_ERROR("Filtered cloud sync error!!");
-      return;
+    double dt = std::abs((stamp - stamp_raw).toSec());
+    if (dt >= 0.05){   //0.1 is the lidar scan time, in order to achive real time, the processing time of the scan need to be 2 times faster than lidar frequence
+      NODELET_WARN_STREAM("Filtered and raw clouds are out of sync! Real-time performance is not achieved! dt = " << dt);
     }
 
     pcl::PointCloud<PointT>::Ptr pcl_cloud(new pcl::PointCloud<PointT>());
@@ -547,8 +553,9 @@ private:
   ros::Subscriber initialpose_sub;
 
   ros::Publisher aligned_pose_pub;
-  ros::Publisher estimated_pose_pub;
+  ros::Publisher predicted_pose_pub;
   ros::Publisher aligned_pub;
+  ros::Publisher predicted_cloud_pub;
   ros::Publisher status_pub;
 
   tf2_ros::Buffer tf_buffer;

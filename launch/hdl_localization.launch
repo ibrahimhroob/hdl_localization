@@ -3,6 +3,7 @@
   <!-- arguments -->
   <arg name="nodelet_manager" default="ndt_nodelet_manager" />
   <arg name="points_topic" default="/os_cloud_node/points" />
+  <arg name="points_topic_filtered" default="/cloud_filtered" />
   <arg name="downsample_resolution" default="0.2" />
   <arg name="globalmap_pcd" default="$(find hdl_localization)/data/map.pcd" />
   <!-- input clouds are transformed in odom_child_frame, and then localization is performed in that frame -->
@@ -14,7 +15,7 @@
   <arg name="invert_imu_acc" default="false" />
   <arg name="invert_imu_gyro" default="false" />
   <arg name="use_global_localization" default="false" />
-  <arg name="imu_topic" default="/imu/data" />
+  <arg name="imu_topic" default="/os_cloud_node/imu" />
   <arg name="enable_robot_odometry_prediction" value="false" />
   <arg name="robot_odom_frame_id" value="ndt_odom" />
   <arg name="plot_estimation_errors" value="false" />
@@ -34,6 +35,7 @@
     <!-- hdl_localization_nodelet -->
     <node pkg="nodelet" type="nodelet" name="hdl_localization_nodelet" args="load hdl_localization/HdlLocalizationNodelet $(arg nodelet_manager)">
       <remap from="/velodyne_points" to="$(arg points_topic)" />
+      <remap from="/velodyne_points_filtered" to="$(arg points_topic_filtered)" />
       <remap from="/gpsimu_driver/imu_data" to="$(arg imu_topic)" />
       <!-- odometry frame_id -->
       <param name="odom_child_frame_id" value="$(arg odom_child_frame_id)" />
