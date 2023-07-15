@@ -189,6 +189,8 @@ private:
       return;
     }
 
+    std::cout << "RAW\n";
+
     stamp_raw = points_msg->header.stamp;
     pcl::PointCloud<PointT>::Ptr pcl_cloud(new pcl::PointCloud<PointT>());
     pcl::fromROSMsg(*points_msg, *pcl_cloud);
@@ -213,11 +215,11 @@ private:
         return;
     }
 
-    auto filtered = downsample(cloud);
-    last_scan = filtered;
+    auto cloud_downsampled = downsample(cloud);
+    last_scan = cloud_downsampled;
 
     if(relocalizing) {
-      delta_estimater->add_frame(filtered);
+      delta_estimater->add_frame(cloud);
     }
 
     std::lock_guard<std::mutex> estimator_lock(pose_estimator_mutex);
@@ -228,8 +230,24 @@ private:
     Eigen::Matrix4f before = pose_estimator->matrix();
 
     // predict
-    pose_estimator->predict(stamp_raw);
-
+    if(!use_imu) {
+      pose_estimator->predict(stamp_raw);
+    } else {
+      std::lock_guard<std::mutex> lock(imu_data_mutex);
+      auto imu_iter = imu_data.begin();
+      for(imu_iter; imu_iter != imu_data.end(); imu_iter++) {
+        if(stamp_raw < (*imu_iter)->header.stamp) {
+          break;
+        }
+        const auto& acc = (*imu_iter)->linear_acceleration;
+        const auto& gyro = (*imu_iter)->angular_velocity;
+        double acc_sign = invert_acc ? -1.0 : 1.0;
+        double gyro_sign = invert_gyro ? -1.0 : 1.0;
+        pose_estimator->predict((*imu_iter)->header.stamp, acc_sign * Eigen::Vector3f(acc.x, acc.y, acc.z), gyro_sign * Eigen::Vector3f(gyro.x, gyro.y, gyro.z));
+      }
+      imu_data.erase(imu_data.begin(), imu_iter);
+    }
+    
     // odometry-based prediction
     ros::Time last_correction_time = pose_estimator->last_correction_time();
     if(private_nh.param<bool>("enable_robot_odometry_prediction", false) && !last_correction_time.isZero()) {
@@ -251,7 +269,7 @@ private:
     publish_odometry(stamp_raw, pose_estimator->matrix(), predicted_pose_pub);
 
     // publish predicted clouds 
-    cloud->header.frame_id = "map";
+    // cloud_downsampled->header.frame_id = std::string("map");
     predicted_cloud_pub.publish(cloud);
 
   }
@@ -261,6 +279,8 @@ private:
       NODELET_ERROR("globalmap has not been received!!");
       return;
     }
+
+    std::cout << "FILTERED\n";
 
     const auto& stamp = points_msg->header.stamp;
     double dt = std::abs((stamp - stamp_raw).toSec());
@@ -276,30 +296,19 @@ private:
       return;
     }
 
-    // transform pointcloud into odom_child_frame_id
-    std::string tfError;
-    pcl::PointCloud<PointT>::Ptr cloud(new pcl::PointCloud<PointT>());
-    if(this->tf_buffer.canTransform(odom_child_frame_id, pcl_cloud->header.frame_id, stamp, ros::Duration(0.1), &tfError))
-    {
-        if(!pcl_ros::transformPointCloud(odom_child_frame_id, *pcl_cloud, *cloud, this->tf_buffer)) {
-            NODELET_ERROR("point cloud cannot be transformed into target frame!!");
-            return;
-        }
-    }else
-    {
-        NODELET_ERROR(tfError.c_str());
-        return;
-    }
-
-    auto filtered = downsample(cloud);
+    auto filtered = downsample(pcl_cloud);
     last_scan = filtered;
+
+    if(relocalizing) {
+      delta_estimater->add_frame(filtered);
+    }
 
     // correct
     auto aligned = pose_estimator->correct(stamp, filtered);
 
     if(aligned_pub.getNumSubscribers()) {
       aligned->header.frame_id = "map";
-      aligned->header.stamp = cloud->header.stamp;
+      aligned->header.stamp = filtered->header.stamp;
       aligned_pub.publish(aligned);
     }
 
