@@ -14,6 +14,9 @@
 
 #include <pcl/filters/voxel_grid.h>
 
+#include "ascii_loader.hpp"
+#include <stdexcept>
+
 namespace hdl_localization {
 
 class GlobalmapServerNodelet : public nodelet::Nodelet {
@@ -40,11 +43,29 @@ public:
   }
 
 private:
+
+  void loadGlobalMap(const std::string& filename) {
+      std::string extension;
+      size_t dotIndex = filename.find_last_of(".");
+      if (dotIndex != std::string::npos) {
+          extension = filename.substr(dotIndex + 1);
+      }
+
+      if (extension == "pcd") {
+          pcl::io::loadPCDFile(filename, *globalmap);
+      } else if (extension == "asc") {
+          ASCIIReader::read(filename, globalmap);
+      } else {
+          throw std::runtime_error("Unsupported file type: " + extension);
+      }
+  }
+
   void initialize_params() {
     // read globalmap from a pcd file
     std::string globalmap_pcd = private_nh.param<std::string>("globalmap_pcd", "");
     globalmap.reset(new pcl::PointCloud<PointT>());
-    pcl::io::loadPCDFile(globalmap_pcd, *globalmap);
+
+    loadGlobalMap(globalmap_pcd);
     globalmap->header.frame_id = "map";
 
     std::ifstream utm_file(globalmap_pcd + ".utm");
