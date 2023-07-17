@@ -189,8 +189,6 @@ private:
       return;
     }
 
-    std::cout << "RAW\n";
-
     stamp_raw = points_msg->header.stamp;
     pcl::PointCloud<PointT>::Ptr pcl_cloud(new pcl::PointCloud<PointT>());
     pcl::fromROSMsg(*points_msg, *pcl_cloud);
@@ -279,8 +277,6 @@ private:
       NODELET_ERROR("globalmap has not been received!!");
       return;
     }
-
-    std::cout << "FILTERED\n";
 
     const auto& stamp = points_msg->header.stamp;
     double dt = std::abs((stamp - stamp_raw).toSec());
