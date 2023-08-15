@@ -152,38 +152,38 @@ pcl::PointCloud<PoseEstimator::PointT>::Ptr PoseEstimator::correct(const ros::Ti
   Eigen::Matrix4f odom_guess;
   Eigen::Matrix4f init_guess = Eigen::Matrix4f::Identity();
 
-  if(!odom_ukf) {
+  // if(!odom_ukf) {
     init_guess = imu_guess = matrix();
-  } else {
-    imu_guess = matrix();
-    odom_guess = odom_matrix();
+  // } else {
+  //   imu_guess = matrix();
+  //   odom_guess = odom_matrix();
 
-    Eigen::VectorXf imu_mean(7);
-    Eigen::MatrixXf imu_cov = Eigen::MatrixXf::Identity(7, 7);
-    imu_mean.block<3, 1>(0, 0) = ukf->mean.block<3, 1>(0, 0);
-    imu_mean.block<4, 1>(3, 0) = ukf->mean.block<4, 1>(6, 0);
+  //   Eigen::VectorXf imu_mean(7);
+  //   Eigen::MatrixXf imu_cov = Eigen::MatrixXf::Identity(7, 7);
+  //   imu_mean.block<3, 1>(0, 0) = ukf->mean.block<3, 1>(0, 0);
+  //   imu_mean.block<4, 1>(3, 0) = ukf->mean.block<4, 1>(6, 0);
 
-    imu_cov.block<3, 3>(0, 0) = ukf->cov.block<3, 3>(0, 0);
-    imu_cov.block<3, 4>(0, 3) = ukf->cov.block<3, 4>(0, 6);
-    imu_cov.block<4, 3>(3, 0) = ukf->cov.block<4, 3>(6, 0);
-    imu_cov.block<4, 4>(3, 3) = ukf->cov.block<4, 4>(6, 6);
+  //   imu_cov.block<3, 3>(0, 0) = ukf->cov.block<3, 3>(0, 0);
+  //   imu_cov.block<3, 4>(0, 3) = ukf->cov.block<3, 4>(0, 6);
+  //   imu_cov.block<4, 3>(3, 0) = ukf->cov.block<4, 3>(6, 0);
+  //   imu_cov.block<4, 4>(3, 3) = ukf->cov.block<4, 4>(6, 6);
 
-    Eigen::VectorXf odom_mean = odom_ukf->mean;
-    Eigen::MatrixXf odom_cov = odom_ukf->cov;
+  //   Eigen::VectorXf odom_mean = odom_ukf->mean;
+  //   Eigen::MatrixXf odom_cov = odom_ukf->cov;
 
-    if (imu_mean.tail<4>().dot(odom_mean.tail<4>()) < 0.0) {
-      odom_mean.tail<4>() *= -1.0;
-    }
+  //   if (imu_mean.tail<4>().dot(odom_mean.tail<4>()) < 0.0) {
+  //     odom_mean.tail<4>() *= -1.0;
+  //   }
 
-    Eigen::MatrixXf inv_imu_cov = imu_cov.inverse();
-    Eigen::MatrixXf inv_odom_cov = odom_cov.inverse();
+  //   Eigen::MatrixXf inv_imu_cov = imu_cov.inverse();
+  //   Eigen::MatrixXf inv_odom_cov = odom_cov.inverse();
 
-    Eigen::MatrixXf fused_cov = (inv_imu_cov + inv_odom_cov).inverse();
-    Eigen::VectorXf fused_mean = fused_cov * inv_imu_cov * imu_mean + fused_cov * inv_odom_cov * odom_mean;
+  //   Eigen::MatrixXf fused_cov = (inv_imu_cov + inv_odom_cov).inverse();
+  //   Eigen::VectorXf fused_mean = fused_cov * inv_imu_cov * imu_mean + fused_cov * inv_odom_cov * odom_mean;
 
-    init_guess.block<3, 1>(0, 3) = Eigen::Vector3f(fused_mean[0], fused_mean[1], fused_mean[2]);
-    init_guess.block<3, 3>(0, 0) = Eigen::Quaternionf(fused_mean[3], fused_mean[4], fused_mean[5], fused_mean[6]).normalized().toRotationMatrix();
-  }
+  //   init_guess.block<3, 1>(0, 3) = Eigen::Vector3f(fused_mean[0], fused_mean[1], fused_mean[2]);
+  //   init_guess.block<3, 3>(0, 0) = Eigen::Quaternionf(fused_mean[3], fused_mean[4], fused_mean[5], fused_mean[6]).normalized().toRotationMatrix();
+  // }
 
   pcl::PointCloud<PointT>::Ptr aligned(new pcl::PointCloud<PointT>());
   registration->setInputSource(cloud);

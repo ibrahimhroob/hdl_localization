@@ -23,6 +23,7 @@
 #include <pcl/filters/voxel_grid.h>
 
 #include <pclomp/ndt_omp.h>
+#include <pclomp/gicp_omp.h>
 #include <fast_gicp/ndt/ndt_cuda.hpp>
 
 #include <hdl_localization/pose_estimator.hpp>
@@ -87,7 +88,7 @@ public:
 
 private:
   pcl::Registration<PointT, PointT>::Ptr create_registration() const {
-    std::string reg_method = private_nh.param<std::string>("reg_method", "NDT_OMP");
+    std::string reg_method = private_nh.param<std::string>("reg_method", "GICP_OMP");
     std::string ndt_neighbor_search_method = private_nh.param<std::string>("ndt_neighbor_search_method", "DIRECT7");
     double ndt_neighbor_search_radius = private_nh.param<double>("ndt_neighbor_search_radius", 2.0);
     double ndt_resolution = private_nh.param<double>("ndt_resolution", 1.0);
@@ -137,6 +138,10 @@ private:
         NODELET_WARN("invalid search method was given");
       }
       return ndt;
+    } else if (reg_method == "GICP_OMP"){
+        NODELET_INFO("GICP_OMP is selected");
+        pclomp::GeneralizedIterativeClosestPoint<PointT, PointT>::Ptr gicp_omp(new pclomp::GeneralizedIterativeClosestPoint<PointT, PointT>());
+        return gicp_omp;
     }
 
     NODELET_ERROR_STREAM("unknown registration method:" << reg_method);
@@ -228,46 +233,47 @@ private:
     Eigen::Matrix4f before = pose_estimator->matrix();
 
     // predict
-    if(!use_imu) {
+    // if(!use_imu) {
       pose_estimator->predict(stamp_raw);
-    } else {
-      std::lock_guard<std::mutex> lock(imu_data_mutex);
-      auto imu_iter = imu_data.begin();
-      for(imu_iter; imu_iter != imu_data.end(); imu_iter++) {
-        if(stamp_raw < (*imu_iter)->header.stamp) {
-          break;
-        }
-        const auto& acc = (*imu_iter)->linear_acceleration;
-        const auto& gyro = (*imu_iter)->angular_velocity;
-        double acc_sign = invert_acc ? -1.0 : 1.0;
-        double gyro_sign = invert_gyro ? -1.0 : 1.0;
-        pose_estimator->predict((*imu_iter)->header.stamp, acc_sign * Eigen::Vector3f(acc.x, acc.y, acc.z), gyro_sign * Eigen::Vector3f(gyro.x, gyro.y, gyro.z));
-      }
-      imu_data.erase(imu_data.begin(), imu_iter);
-    }
+    // } else {
+    //   std::lock_guard<std::mutex> lock(imu_data_mutex);
+    //   auto imu_iter = imu_data.begin();
+    //   for(imu_iter; imu_iter != imu_data.end(); imu_iter++) {
+    //     if(stamp_raw < (*imu_iter)->header.stamp) {
+    //       break;
+    //     }
+    //     const auto& acc = (*imu_iter)->linear_acceleration;
+    //     const auto& gyro = (*imu_iter)->angular_velocity;
+    //     double acc_sign = invert_acc ? -1.0 : 1.0;
+    //     double gyro_sign = invert_gyro ? -1.0 : 1.0;
+    //     pose_estimator->predict((*imu_iter)->header.stamp, acc_sign * Eigen::Vector3f(acc.x, acc.y, acc.z), gyro_sign * Eigen::Vector3f(gyro.x, gyro.y, gyro.z));
+    //   }
+    //   imu_data.erase(imu_data.begin(), imu_iter);
+    // }
     
     // odometry-based prediction
-    ros::Time last_correction_time = pose_estimator->last_correction_time();
-    if(private_nh.param<bool>("enable_robot_odometry_prediction", false) && !last_correction_time.isZero()) {
-      geometry_msgs::TransformStamped odom_delta;
-      if(tf_buffer.canTransform(odom_child_frame_id, last_correction_time, odom_child_frame_id, stamp_raw, robot_odom_frame_id, ros::Duration(0.1))) {
-        odom_delta = tf_buffer.lookupTransform(odom_child_frame_id, last_correction_time, odom_child_frame_id, stamp_raw, robot_odom_frame_id, ros::Duration(0));
-      } else if(tf_buffer.canTransform(odom_child_frame_id, last_correction_time, odom_child_frame_id, ros::Time(0), robot_odom_frame_id, ros::Duration(0))) {
-        odom_delta = tf_buffer.lookupTransform(odom_child_frame_id, last_correction_time, odom_child_frame_id, ros::Time(0), robot_odom_frame_id, ros::Duration(0));
-      }
+    // ros::Time last_correction_time = pose_estimator->last_correction_time();
+    // if(private_nh.param<bool>("enable_robot_odometry_prediction", false) && !last_correction_time.isZero()) {
+    //   geometry_msgs::TransformStamped odom_delta;
+    //   if(tf_buffer.canTransform(odom_child_frame_id, last_correction_time, odom_child_frame_id, stamp_raw, robot_odom_frame_id, ros::Duration(0.1))) {
+    //     odom_delta = tf_buffer.lookupTransform(odom_child_frame_id, last_correction_time, odom_child_frame_id, stamp_raw, robot_odom_frame_id, ros::Duration(0));
+    //   } else if(tf_buffer.canTransform(odom_child_frame_id, last_correction_time, odom_child_frame_id, ros::Time(0), robot_odom_frame_id, ros::Duration(0))) {
+    //     odom_delta = tf_buffer.lookupTransform(odom_child_frame_id, last_correction_time, odom_child_frame_id, ros::Time(0), robot_odom_frame_id, ros::Duration(0));
+    //   }
 
-      if(odom_delta.header.stamp.isZero()) {
-        NODELET_WARN_STREAM("failed to look up transform between " << cloud->header.frame_id << " and " << robot_odom_frame_id);
-      } else {
-        Eigen::Isometry3d delta = tf2::transformToEigen(odom_delta);
-        pose_estimator->predict_odom(delta.cast<float>().matrix());
-      }
-    }
+    //   if(odom_delta.header.stamp.isZero()) {
+    //     NODELET_WARN_STREAM("failed to look up transform between " << cloud->header.frame_id << " and " << robot_odom_frame_id);
+    //   } else {
+    //     Eigen::Isometry3d delta = tf2::transformToEigen(odom_delta);
+    //     pose_estimator->predict_odom(delta.cast<float>().matrix());
+    //   }
+    // }
 
     publish_odometry(stamp_raw, pose_estimator->matrix(), predicted_pose_pub);
 
-    // publish predicted clouds 
-    // cloud_downsampled->header.frame_id = std::string("map");
+    // publish predicted clouds, first we need to transform the point cloud using the pose_estimator->matrix()
+    // pcl::transformPointCloud(*cloud, *cloud, pose_estimator->matrix());  
+    // cloud->header.frame_id = std::string("map");
     predicted_cloud_pub.publish(cloud);
 
   }
