@@ -21,11 +21,14 @@ PoseEstimator::PoseEstimator(pcl::Registration<PointT, PointT>::Ptr& registratio
   last_observation.block<3, 1>(0, 3) = pos;
 
   process_noise = Eigen::MatrixXf::Identity(16, 16);
-  process_noise.middleRows(0, 3) *= 1.0;
-  process_noise.middleRows(3, 3) *= 1.0;
-  process_noise.middleRows(6, 4) *= 0.5;
+  process_noise.middleRows(0, 3) *= 0.5;
+  process_noise.middleRows(3, 3) *= 0.5;
+  process_noise.middleRows(6, 4) *= 0.1;
   process_noise.middleRows(10, 3) *= 1e-6;
   process_noise.middleRows(13, 3) *= 1e-6;
+
+  // std::cout << "Process Noise Matrix:" << std::endl;
+  // std::cout << process_noise << std::endl;
 
   Eigen::MatrixXf measurement_noise = Eigen::MatrixXf::Identity(7, 7);
   measurement_noise.middleRows(0, 3) *= 0.01;
@@ -64,6 +67,8 @@ void PoseEstimator::predict(const ros::Time& stamp) {
 
   double dt = (stamp - prev_stamp).toSec();
   prev_stamp = stamp;
+
+  // std::cout << "predict(const ros::Time& stamp) -> dt: " << dt << "\n";
 
   ukf->setProcessNoiseCov(process_noise * dt);
   ukf->system.dt = dt;

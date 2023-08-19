@@ -4,7 +4,7 @@ import rospy
 import matplotlib.pyplot as plt
 from std_msgs.msg import Float32
 
-MAX_BUFFER_SIZE = 2000 
+MAX_BUFFER_SIZE = 50 
 
 class Plotter(object):
 	def __init__(self):

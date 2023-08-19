@@ -6,7 +6,7 @@ import scipy.spatial
 from matplotlib import pyplot
 from hdl_localization.msg import *
 
-MAX_BUFFER_SIZE = 2000 
+MAX_BUFFER_SIZE = 50 
 
 
 class Plotter(object):

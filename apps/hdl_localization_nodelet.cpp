@@ -25,6 +25,9 @@
 #include <pclomp/ndt_omp.h>
 #include <pclomp/gicp_omp.h>
 #include <fast_gicp/ndt/ndt_cuda.hpp>
+#include <fast_gicp/gicp/fast_vgicp.hpp>
+#include <fast_gicp/gicp/fast_vgicp_cuda.hpp>
+
 
 #include <hdl_localization/pose_estimator.hpp>
 #include <hdl_localization/delta_estimater.hpp>
@@ -120,8 +123,10 @@ private:
       ndt->setResolution(ndt_resolution);
 
       if(reg_method.find("D2D") != std::string::npos) {
+        NODELET_INFO("D2D is selected");
         ndt->setDistanceMode(fast_gicp::NDTDistanceMode::D2D);
       } else if (reg_method.find("P2D") != std::string::npos) {
+        NODELET_INFO("P2D is selected");
         ndt->setDistanceMode(fast_gicp::NDTDistanceMode::P2D);
       }
 
@@ -142,7 +147,21 @@ private:
         NODELET_INFO("GICP_OMP is selected");
         pclomp::GeneralizedIterativeClosestPoint<PointT, PointT>::Ptr gicp_omp(new pclomp::GeneralizedIterativeClosestPoint<PointT, PointT>());
         return gicp_omp;
+    } else if (reg_method == "VGICP"){
+        NODELET_INFO("VGICP is selected");
+        boost::shared_ptr<fast_gicp::FastVGICP<PointT, PointT>> vgicp(new fast_gicp::FastVGICP<PointT, PointT>);
+        vgicp->setNeighborSearchMethod(fast_gicp::NeighborSearchMethod::DIRECT27);
+        vgicp->setVoxelAccumulationMode(fast_gicp::VoxelAccumulationMode::ADDITIVE);
+        vgicp->setResolution(ndt_resolution);
+        vgicp->setNumThreads(12);
+        return vgicp;
+    } else if (reg_method == "VGICP_CUDA"){
+        NODELET_INFO("VGICP_CUDA is selected");
+        boost::shared_ptr<fast_gicp::FastVGICPCuda<PointT, PointT>> vgicp_cuda(new fast_gicp::FastVGICPCuda<PointT, PointT>);
+        vgicp_cuda->setResolution(ndt_resolution);
+        return vgicp_cuda;
     }
+
 
     NODELET_ERROR_STREAM("unknown registration method:" << reg_method);
     return nullptr;
@@ -154,6 +173,7 @@ private:
     boost::shared_ptr<pcl::VoxelGrid<PointT>> voxelgrid(new pcl::VoxelGrid<PointT>());
     voxelgrid->setLeafSize(downsample_resolution, downsample_resolution, downsample_resolution);
     downsample_filter = voxelgrid;
+    NODELET_INFO_STREAM("scan matching downsample_resolution : " << downsample_resolution);
 
     NODELET_INFO("create registration method for localization");
     registration = create_registration();
@@ -206,6 +226,7 @@ private:
     // transform pointcloud into odom_child_frame_id
     std::string tfError;
     pcl::PointCloud<PointT>::Ptr cloud(new pcl::PointCloud<PointT>());
+
     if(this->tf_buffer.canTransform(odom_child_frame_id, pcl_cloud->header.frame_id, stamp_raw, ros::Duration(0.1), &tfError))
     {
         if(!pcl_ros::transformPointCloud(odom_child_frame_id, *pcl_cloud, *cloud, this->tf_buffer)) {
@@ -230,11 +251,11 @@ private:
       NODELET_ERROR("waiting for initial pose input!!");
       return;
     }
-    Eigen::Matrix4f before = pose_estimator->matrix();
+    // Eigen::Matrix4f before = pose_estimator->matrix();
 
     // predict
     // if(!use_imu) {
-      pose_estimator->predict(stamp_raw);
+    pose_estimator->predict(stamp_raw);
     // } else {
     //   std::lock_guard<std::mutex> lock(imu_data_mutex);
     //   auto imu_iter = imu_data.begin();
@@ -274,7 +295,7 @@ private:
     // publish predicted clouds, first we need to transform the point cloud using the pose_estimator->matrix()
     // pcl::transformPointCloud(*cloud, *cloud, pose_estimator->matrix());  
     // cloud->header.frame_id = std::string("map");
-    predicted_cloud_pub.publish(cloud);
+    // predicted_cloud_pub.publish(cloud);
 
   }
 
@@ -286,7 +307,7 @@ private:
 
     const auto& stamp = points_msg->header.stamp;
     double dt = std::abs((stamp - stamp_raw).toSec());
-    if (dt >= 0.05){   //0.1 is the lidar scan time, in order to achive real time, the processing time of the scan need to be 2 times faster than lidar frequence
+    if (dt >= 0.1){   //0.1 is the lidar scan time, in order to achive real time, the processing time of the scan need to be 2 times faster than lidar frequence
       NODELET_WARN_STREAM("Filtered and raw clouds are out of sync! Real-time performance is not achieved! dt = " << dt);
     }
 
