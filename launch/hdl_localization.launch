@@ -5,7 +5,7 @@
   <arg name="points_topic" default="/os_cloud_node/points" />
   <arg name="points_topic_filtered" default="/cloud_filtered" />
   <arg name="downsample_resolution" default="0.20" />
-  <arg name="globalmap_pcd" default="$(env DATA)/maps/april_6_ABEF_full.asc" />
+  <arg name="globalmap_pcd" default="$(env DATA)/maps/base_map.pcd" />
   <!-- input clouds are transformed in odom_child_frame, and then localization is performed in that frame -->
   <!-- this is useful to match the LIDAR and IMU coodinate systems -->
   <arg name="odom_child_frame_id" default="os_sensor" />
@@ -70,6 +70,10 @@
     <param name="init_ori_z" value="0.0" />
 
     <param name="use_global_localization" value="$(arg use_global_localization)" />
+    <remap from="/ndt/predicted/odom" to="/odometry_node/odometry_estimate"/>
+    <remap from="/ndt/odom" to="/odometry_node/odometry"/>
+    <remap from="/ndt/aligned_points" to="/odometry_node/frame_registered"/>
+    
   </node>
 
   <node pkg="hdl_localization" type="plot_status.py" name="plot_estimation_errors" if="$(arg plot_estimation_errors)" />

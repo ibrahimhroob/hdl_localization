@@ -72,7 +72,7 @@ public:
     aligned_pose_pub = nh.advertise<nav_msgs::Odometry>("/ndt/odom", 5, false);
     predicted_pose_pub = nh.advertise<nav_msgs::Odometry>("/ndt/predicted/odom", 5, false);
     aligned_pub = nh.advertise<sensor_msgs::PointCloud2>("/ndt/aligned_points", 5, false);
-    predicted_cloud_pub = nh.advertise<sensor_msgs::PointCloud2>("/ndt/predicted/aligned_points", 5, false);
+    // predicted_cloud_pub = nh.advertise<sensor_msgs::PointCloud2>("/ndt/predicted/aligned_points", 5, false);
     status_pub = nh.advertise<ScanMatchingStatus>("/ndt/status", 5, false);
 
     // global localization
@@ -587,7 +587,7 @@ private:
   ros::Publisher aligned_pose_pub;
   ros::Publisher predicted_pose_pub;
   ros::Publisher aligned_pub;
-  ros::Publisher predicted_cloud_pub;
+  // ros::Publisher predicted_cloud_pub;
   ros::Publisher status_pub;
 
   tf2_ros::Buffer tf_buffer;
