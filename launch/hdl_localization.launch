@@ -4,7 +4,7 @@
   <arg name="nodelet_manager" default="ndt_nodelet_manager" />
   <arg name="points_topic" default="/os_cloud_node/points" />
   <arg name="downsample_resolution" default="0.2" />
-  <arg name="globalmap_pcd" default="$(find hdl_localization)/data/map.pcd" />
+  <arg name="globalmap_pcd" default="$(find hdl_localization)/data/maps/base_map.pcd" />
   <!-- input clouds are transformed in odom_child_frame, and then localization is performed in that frame -->
   <!-- this is useful to match the LIDAR and IMU coodinate systems -->
   <arg name="odom_child_frame_id" default="os_sensor" />
