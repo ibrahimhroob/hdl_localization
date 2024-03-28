@@ -1,9 +1,12 @@
-#!/usr/bin/python3
+#!/usr/bin/python
+
 import rospy
 import numpy
 import scipy.spatial
 from matplotlib import pyplot
 from hdl_localization.msg import *
+
+MAX_BUFFER_SIZE = 50 
 
 
 class Plotter(object):
@@ -13,13 +16,13 @@ class Plotter(object):
 
 		self.status_buffer = []
 		self.timer = rospy.Timer(rospy.Duration(0.1), self.timer_callback)
-		self.status_sub = rospy.Subscriber('/status', ScanMatchingStatus, self.status_callback)
+		self.status_sub = rospy.Subscriber('/ndt/status', ScanMatchingStatus, self.status_callback)
 
 	def status_callback(self, status_msg):
 		self.status_buffer.append(status_msg)
 
-		if len(self.status_buffer) > 50:
-			self.status_buffer = self.status_buffer[-50:]
+		if len(self.status_buffer) > MAX_BUFFER_SIZE:
+			self.status_buffer = self.status_buffer[-MAX_BUFFER_SIZE:]
 
 	def timer_callback(self, event):
 		if len(self.status_buffer) < 2:
